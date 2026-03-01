@@ -39,8 +39,11 @@ class LMStudioProvider extends BaseProvider {
 
         // Model Detection
         const modelMatch = line.match(/\[.*?\]\[INFO\]\[(.*?)\] Running chat completion/);
+        const modelLoadMatch = line.match(/\[.*?\]\[INFO\] Loading model: (.*)/);
         if (modelMatch) {
             result.modelId = modelMatch[1];
+        } else if (modelLoadMatch) {
+            result.modelId = modelLoadMatch[1].trim();
         }
 
         // Generation TPS
@@ -65,7 +68,8 @@ class LMStudioProvider extends BaseProvider {
 
     getLiveModelInfo() {
         try {
-            const output = execSync('lms ps').toString().split('\n');
+            const lmsPath = path.join(os.homedir(), '.lmstudio/bin/lms');
+            const output = execSync(`"${lmsPath}" ps`).toString().split('\n');
             if (output.length > 2) {
                 const lines = output.filter(l => l.trim() !== '' && !l.includes('IDENTIFIER'));
                 if (lines.length > 0) {
@@ -111,7 +115,8 @@ class LMStudioProvider extends BaseProvider {
 
     getServerStatus() {
         try {
-            const output = execSync('lms status').toString();
+            const lmsPath = path.join(os.homedir(), '.lmstudio/bin/lms');
+            const output = execSync(`"${lmsPath}" status`).toString();
             return { serverOn: output.includes('Server: ON') };
         } catch (e) {
             return { serverOn: false };

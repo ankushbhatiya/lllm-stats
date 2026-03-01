@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+const path = require('path');
+const os = require('os');
 const db = require('./src/db');
 const LogWatcher = require('./src/watcher');
 const UI = require('./src/ui');
@@ -19,6 +21,34 @@ try {
 }
 
 const isSummary = process.argv.includes('--summary') || process.argv.includes('-s');
+const isMenubar = process.argv.includes('--menubar');
+const installMenubar = process.argv.includes('--install-menubar');
+
+if (isMenubar) {
+    const menubar = require('./src/menubar');
+    menubar.render(provider);
+    process.exit(0);
+}
+
+if (installMenubar) {
+    const scriptPath = path.resolve(__filename);
+    const pluginName = 'lllm-stats.10s.sh'; // 10s refresh
+    const swiftBarPath = path.join(os.homedir(), 'Library/Application Support/SwiftBar/plugins', pluginName);
+    const xbarPath = path.join(os.homedir(), 'Library/Application Support/xbar/plugins', pluginName);
+
+    console.log('\n🚀 --- LLLM-Stats macOS Menu Bar Installation ---');
+    console.log('To see live TPS in your menu bar, you can use SwiftBar or xbar.\n');
+    console.log('Option 1: SwiftBar (Recommended)');
+    console.log(`  mkdir -p "$(dirname "${swiftBarPath}")"`);
+    console.log(`  echo '#!/bin/bash\n${scriptPath} --menubar' > "${swiftBarPath}"`);
+    console.log(`  chmod +x "${swiftBarPath}"`);
+    console.log('\nOption 2: xbar');
+    console.log(`  mkdir -p "$(dirname "${xbarPath}")"`);
+    console.log(`  echo '#!/bin/bash\n${scriptPath} --menubar' > "${xbarPath}"`);
+    console.log(`  chmod +x "${xbarPath}"`);
+    console.log('\nRefresh your menu bar app after running these commands!');
+    process.exit(0);
+}
 
 if (isSummary) {
     const daily = db.getDailyStats();

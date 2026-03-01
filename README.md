@@ -33,6 +33,13 @@ lllm-stats
 - `[v]` to toggle between Daily, Weekly, and Monthly views.
 - `[q]` to exit.
 
+### macOS Menu Bar (TPS in Toolbar)
+Show real-time TPS directly in your macOS menu bar using **SwiftBar** or **xbar**.
+```bash
+lllm-stats --install-menubar
+```
+This will provide setup commands for your favorite menu bar utility.
+
 ### Summary Mode (Quick Stats)
 Get a text-based summary and exit:
 ```bash
