@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const db = require('./src/db');
 const LogWatcher = require('./src/watcher');
 const UI = require('./src/ui');

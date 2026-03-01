@@ -11,13 +11,25 @@ A real-time Terminal User Interface (TUI) for monitoring **Local LLM** performan
 - 🤖 **Provider Support:** Extensible architecture currently supporting **LM Studio** (Ollama coming soon).
 - 🍏 **Apple Silicon Native:** High-precision GPU and Unified Memory monitoring via `ioreg`.
 
+## Installation
+
+The easiest way to install and set up `lllm-stats` globally is using the provided installation script:
+
+```bash
+./install.sh
+```
+
+This will install the required dependencies and link the executable so you can run `lllm-stats` from anywhere.
+
 ## Usage
 
 ### TUI Mode (Real-time)
 Launch the interactive dashboard:
 ```bash
-npm start
+lllm-stats
 ```
+*(Alternatively: `npm start`)*
+
 *Controls:* 
 - `[v]` to toggle between Daily, Weekly, and Monthly views.
 - `[q]` to exit.
@@ -25,8 +37,9 @@ npm start
 ### Summary Mode (Quick Stats)
 Get a text-based summary and exit:
 ```bash
-node index.js -s
+lllm-stats -s
 ```
+*(Alternatively: `node index.js -s`)*
 
 ## Technical Architecture
 - **Provider Pattern:** All server-specific logic (logs, CLI calls) is isolated in `src/providers/`.
