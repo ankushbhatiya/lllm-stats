@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 const EventEmitter = require('events');
 const chokidar = require('chokidar');
+const db = require('./db');
 
 class LogWatcher extends EventEmitter {
     constructor() {
@@ -64,6 +65,7 @@ class LogWatcher extends EventEmitter {
 
             stream.on('data', (chunk) => {
                 this.parseChunk(chunk.toString());
+                db.updateProcessedOffset(filePath, curr.size);
             });
 
             fileSize = curr.size;
@@ -72,8 +74,7 @@ class LogWatcher extends EventEmitter {
 
     parseChunk(data) {
         this.buffer += data;
-        const lines = this.buffer.split('
-');
+        const lines = this.buffer.split('\n');
         this.buffer = lines.pop(); // Keep partial line
 
         for (const line of lines) {

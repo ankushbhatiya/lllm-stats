@@ -22,11 +22,21 @@ npm install
 
 ## Usage
 
-Start the dashboard:
+### TUI Mode (Real-time)
+Launch the interactive dashboard:
 ```bash
 npm start
+# OR
+node index.js
 ```
-*Note: Ensure LM Studio is running and the local server is active to generate logs.*
+
+### Summary Mode (Quick Stats)
+Get a text-based summary and exit:
+```bash
+node index.js --summary
+# OR
+node index.js -s
+```
 
 ## Technical Details
 - **Log Source:** `~/.lmstudio/server-logs/`
