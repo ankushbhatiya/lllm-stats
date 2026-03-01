@@ -13,10 +13,9 @@ A real-time Terminal User Interface (TUI) for monitoring **Local LLM** performan
 
 ## Installation
 
-The easiest way to install and set up `lllm-stats` globally is using the provided installation script:
-
+# Quick install (auto-detects your package manager)
 ```bash
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/ankushbhatiya/lllm-stats/main/install.sh | bash
 ```
 
 This will install the required dependencies and link the executable so you can run `lllm-stats` from anywhere.
