@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
-const DATA_DIR = path.join(os.homedir(), '.lms-stats');
+const DATA_DIR = path.join(os.homedir(), '.lllm-stats');
 const DB_PATH = path.join(DATA_DIR, 'stats.db');
 
 // Ensure data directory exists

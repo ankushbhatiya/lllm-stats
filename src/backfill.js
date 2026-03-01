@@ -1,9 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const db = require('./db');
 
-function backfill(logDir) {
+function backfill(provider) {
+    const logDir = provider.logDir;
+    if (!fs.existsSync(logDir)) return 0;
+
     const months = fs.readdirSync(logDir).sort();
     let statsFound = 0;
 
@@ -22,7 +24,6 @@ function backfill(logDir) {
 
             if (currentSize <= lastOffset) continue;
 
-            // Process file from lastOffset
             const content = fs.readFileSync(filePath, 'utf8').slice(lastOffset);
             const lines = content.split('\n');
             
@@ -30,25 +31,21 @@ function backfill(logDir) {
             let currentTimestamp = new Date();
 
             for (const line of lines) {
-                // Try to extract timestamp from log line
-                const tsMatch = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/);
-                if (tsMatch) {
-                    currentTimestamp = new Date(tsMatch[1]);
+                const parsed = provider.parseLine(line);
+                
+                if (parsed.timestamp) {
+                    currentTimestamp = parsed.timestamp;
                 }
 
-                // Model Detection
-                const modelMatch = line.match(/\[.*?\]\[INFO\]\[(.*?)\] Running chat completion/);
-                if (modelMatch) {
-                    currentModel = modelMatch[1];
+                if (parsed.modelId) {
+                    currentModel = parsed.modelId;
                 }
 
-                // Generation TPS
-                const genMatch = line.match(/eval time =.*?(\d+) tokens \(\s*.*?\s*ms per token,\s*(.*?)\s*tokens per second\)/);
-                if (genMatch && !line.includes('prompt eval time')) {
+                if (parsed.stats) {
                     db.saveStat({
                         model_id: currentModel,
-                        generation_tps: parseFloat(genMatch[2]),
-                        total_tokens: parseInt(genMatch[1]),
+                        generation_tps: parsed.stats.generation_tps,
+                        total_tokens: parsed.stats.total_tokens,
                         timestamp: currentTimestamp
                     });
                     statsFound++;

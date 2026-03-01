@@ -6,40 +6,25 @@ const chokidar = require('chokidar');
 const db = require('./db');
 
 class LogWatcher extends EventEmitter {
-    constructor() {
+    constructor(provider) {
         super();
-        this.logDir = path.join(os.homedir(), '.lmstudio/server-logs');
+        this.provider = provider;
+        this.logDir = provider.logDir;
         this.currentFile = null;
         this.currentModelId = 'Unknown';
+        this.currentTimestamp = new Date();
         this.buffer = '';
     }
 
-    findLatestLog() {
-        const months = fs.readdirSync(this.logDir).sort().reverse();
-        if (months.length === 0) return null;
-        
-        const monthDir = path.join(this.logDir, months[0]);
-        const files = fs.readdirSync(monthDir)
-            .filter(f => f.endsWith('.log'))
-            .sort((a, b) => {
-                const statA = fs.statSync(path.join(monthDir, a));
-                const statB = fs.statSync(path.join(monthDir, b));
-                return statB.mtimeMs - statA.mtimeMs;
-            });
-
-        return files.length > 0 ? path.join(monthDir, files[0]) : null;
-    }
-
     start() {
-        const latest = this.findLatestLog();
+        const latest = this.provider.findLatestLog();
         if (latest) {
             this.watchFile(latest);
         }
 
-        // Watch for new log files (log rotation or new day)
+        // Watch for new log files
         chokidar.watch(this.logDir, { ignoreInitial: true, depth: 2 }).on('add', (filePath) => {
             if (filePath.endsWith('.log')) {
-                console.log(`New log file detected: ${filePath}`);
                 this.watchFile(filePath);
             }
         });
@@ -55,7 +40,7 @@ class LogWatcher extends EventEmitter {
 
         fs.watchFile(filePath, { interval: 1000 }, (curr) => {
             if (curr.size < fileSize) {
-                fileSize = 0; // File truncated
+                fileSize = 0; 
             }
             
             const stream = fs.createReadStream(filePath, {
@@ -64,48 +49,44 @@ class LogWatcher extends EventEmitter {
             });
 
             stream.on('data', (chunk) => {
-                this.parseChunk(chunk.toString());
-                db.updateProcessedOffset(filePath, curr.size);
+                this.parseChunk(chunk.toString(), filePath, curr.size);
             });
 
             fileSize = curr.size;
         });
     }
 
-    parseChunk(data) {
+    parseChunk(data, filePath, size) {
         this.buffer += data;
         const lines = this.buffer.split('\n');
-        this.buffer = lines.pop(); // Keep partial line
+        this.buffer = lines.pop();
 
         for (const line of lines) {
-            // Model Detection
-            const modelMatch = line.match(/\[.*?\]\[INFO\]\[(.*?)\] Running chat completion/);
-            if (modelMatch) {
-                this.currentModelId = modelMatch[1];
+            const parsed = this.provider.parseLine(line);
+            
+            if (parsed.timestamp) {
+                this.currentTimestamp = parsed.timestamp;
+            }
+
+            if (parsed.modelId) {
+                this.currentModelId = parsed.modelId;
                 this.emit('modelChange', this.currentModelId);
             }
 
-            // Generation TPS
-            const genMatch = line.match(/eval time =.*?(\d+) tokens \(\s*.*?\s*ms per token,\s*(.*?)\s*tokens per second\)/);
-            if (genMatch && !line.includes('prompt eval time')) {
-                const tokens = parseInt(genMatch[1]);
-                const tps = parseFloat(genMatch[2]);
+            if (parsed.stats) {
                 this.emit('stats', {
                     model_id: this.currentModelId,
-                    generation_tps: tps,
-                    total_tokens: tokens,
-                    timestamp: new Date()
+                    generation_tps: parsed.stats.generation_tps,
+                    total_tokens: parsed.stats.total_tokens,
+                    timestamp: this.currentTimestamp
                 });
             }
 
-            // Prompt TPS (simplified capture)
-            const promptMatch = line.match(/prompt eval time =.*?tokens \(\s*.*?\s*ms per token,\s*(.*?)\s*tokens per second\)/);
-            if (promptMatch) {
-                this.emit('promptStats', {
-                    prompt_tps: parseFloat(promptMatch[1])
-                });
+            if (parsed.promptStats) {
+                this.emit('promptStats', parsed.promptStats);
             }
         }
+        db.updateProcessedOffset(filePath, size);
     }
 }
 

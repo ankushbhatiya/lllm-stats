@@ -1,16 +1,17 @@
 const db = require('./src/db');
 const LogWatcher = require('./src/watcher');
 const UI = require('./src/ui');
-const system = require('./src/system');
 const backfill = require('./src/backfill');
+const LMStudioProvider = require('./src/providers/lmstudio');
 
-const logDir = require('path').join(require('os').homedir(), '.lmstudio/server-logs');
+// TODO: In future, add detection logic for Ollama, etc.
+const provider = new LMStudioProvider();
 
 // Run backfill on startup
 try {
-    const backfilledCount = backfill(logDir);
+    const backfilledCount = backfill(provider);
     if (backfilledCount > 0) {
-        console.log(`Backfilled ${backfilledCount} stats from logs.`);
+        // Only log in summary mode or to a file if needed
     }
 } catch (e) {
     console.error('Backfill failed:', e.message);
@@ -18,41 +19,16 @@ try {
 
 const isSummary = process.argv.includes('--summary') || process.argv.includes('-s');
 
-const { execSync } = require('child_process');
-
-function getLiveModelInfo() {
-    try {
-        const output = execSync('lms ps').toString().split('\n');
-        if (output.length > 2) {
-            // Find the first line after the header
-            const lines = output.filter(l => l.trim() !== '' && !l.includes('IDENTIFIER'));
-            if (lines.length > 0) {
-                // Split by multiple spaces
-                const parts = lines[0].split(/\s{2,}/);
-                return {
-                    identifier: parts[0],
-                    model: parts[1],
-                    status: parts[2],
-                    size: parts[3]
-                };
-            }
-        }
-    } catch (e) {
-        // lms command might not be in path or failing
-    }
-    return null;
-}
-
 if (isSummary) {
     const daily = db.getDailyStats();
     const weekly = db.getWeeklyStats();
     const last = db.getLastStat();
-    const live = getLiveModelInfo();
-    const gpu = system.getGpuStats();
-    const lmsStatus = system.getLmsStatus();
+    const live = provider.getLiveModelInfo();
+    const gpu = provider.getGpuStats();
+    const serverStatus = provider.getServerStatus();
 
-    console.log('\n📊 --- LMS-Stats Summary ---');
-    console.log(`Server Status:       ${lmsStatus.serverOn ? 'ONLINE' : 'OFFLINE'}`);
+    console.log(`\n📊 --- LLLM-Stats Summary (${provider.name}) ---`);
+    console.log(`Server Status:       ${serverStatus.serverOn ? 'ONLINE' : 'OFFLINE'}`);
     
     if (live) {
         console.log(`Live Model:          ${live.identifier} (${live.status})`);
@@ -87,15 +63,12 @@ if (isSummary) {
 }
 
 // Default: Start TUI
-const ui = new UI();
-const watcher = new LogWatcher();
+const ui = new UI(provider);
+const watcher = new LogWatcher(provider);
 
 // Handle Log Events
 watcher.on('stats', (data) => {
-    // Save to DB
     db.saveStat(data);
-    
-    // Update UI
     ui.updateTPS(data.generation_tps);
 });
 
@@ -111,7 +84,7 @@ watcher.on('error', (err) => {
 try {
     watcher.start();
 } catch (err) {
-    console.error('Failed to start log watcher. Ensure LM Studio is installed and has generated logs.');
+    console.error(`Failed to start log watcher for ${provider.name}.`);
     process.exit(1);
 }
 
@@ -121,9 +94,9 @@ ui.refreshStats();
 
 // Poll for live info every 10s in TUI mode
 setInterval(() => {
-    const live = getLiveModelInfo();
-    const gpu = system.getGpuStats();
-    const lmsStatus = system.getLmsStatus();
+    const live = provider.getLiveModelInfo();
+    const gpu = provider.getGpuStats();
+    const serverStatus = provider.getServerStatus();
     
     if (live) {
         ui.setLiveInfo(live);
@@ -131,6 +104,6 @@ setInterval(() => {
     
     ui.setSystemStats({
         ...gpu,
-        serverOn: lmsStatus.serverOn
+        serverOn: serverStatus.serverOn
     });
 }, 10000);

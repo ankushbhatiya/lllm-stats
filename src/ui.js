@@ -3,10 +3,11 @@ const contrib = require('blessed-contrib');
 const db = require('./db');
 
 class UI {
-    constructor() {
+    constructor(provider) {
+        this.provider = provider;
         this.screen = blessed.screen({
             smartCSR: true,
-            title: 'LMS-Stats - Local LLM Performance Monitor'
+            title: `LLLM-Stats - ${provider.name} Monitor`
         });
 
         this.grid = new contrib.grid({ rows: 12, cols: 12, screen: this.screen });
@@ -57,7 +58,7 @@ class UI {
 
         // 4. Data Box: Model & Current Info (Bottom Left)
         this.infoBox = this.grid.set(3, 0, 8, 4, blessed.box, {
-            label: ' ## MODEL & SYSTEM HEALTH ',
+            label: ` ## ${provider.name.toUpperCase()} HEALTH `,
             content: 'Waiting for telemetry...',
             tags: true,
             padding: { left: 1, right: 1 },
@@ -84,7 +85,7 @@ class UI {
     }
 
     updateTPS(tps) {
-        this.tpsGauge.setPercent(Math.min(Math.round(tps * 2), 100)); // Visual fill still scales to 50 TPS
+        this.tpsGauge.setPercent(Math.min(Math.round(tps * 2), 100)); 
         this.tpsGauge.setLabel(` >> LIVE: ${tps.toFixed(2)} TPS `);
         this.updateChart();
         this.refreshStats();

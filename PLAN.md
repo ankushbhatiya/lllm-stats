@@ -1,36 +1,27 @@
-# LMS-Stats: Implementation Plan
+# LLLM-Stats: Implementation Plan
 
-`lms-stats` is a Terminal User Interface (TUI) tool designed to monitor LM Studio performance metrics by tailing local logs and persisting data for long-term analytics.
+`lllm-stats` is a Terminal User Interface (TUI) tool designed to monitor Local LLM performance metrics by tailing logs and persisting data for long-term analytics.
 
 ## 1. Technical Stack
 - **Runtime:** Node.js
-- **TUI Framework:** `blessed` + `blessed-contrib` (for charts/gauges)
-- **Log Monitoring:** `chokidar` (to watch for new log files) + `tail-stream` (to read updates)
-- **Database:** `better-sqlite3` (Zero-config, high-performance SQLite)
-- **Date Handling:** `dayjs`
+- **TUI Framework:** `blessed` + `blessed-contrib`
+- **Architecture:** Provider-based (Extensible for LM Studio, Ollama, etc.)
+- **Database:** `better-sqlite3` (Stored in `~/.lllm-stats/`)
 
 ---
 
 ## 2. Core Architecture
 
-### Phase A: Log Discovery & Tailing
-LM Studio stores logs in `~/.lmstudio/server-logs/{YYYY-MM}/{YYYY-MM-DD}.[n].log`.
-1. **Latest Log Discovery:** On startup, the tool must find the most recent `.log` file in the current month's folder.
-2. **File Watching:** Use `chokidar` to detect when LM Studio creates a new log file (e.g., when it rotates logs or the day changes) and switch the "tail" to the new file.
+### Phase A: Provider System
+All server-specific logic is isolated in `src/providers/`:
+1. **Log Discovery:** Finding the correct log files.
+2. **Parsing:** Regex patterns for TPS and Model detection.
+3. **CLI Integration:** Wrapping tools like `lms ps` or `ollama ps`.
 
-### Phase B: Log Parsing (Regex)
-The tool must extract three critical pieces of data from the log stream:
-1. **Model Name:** 
-   - Pattern: `\[.*?\]\[INFO\]\[(.*?)\] Running chat completion`
-2. **Generation Speed (TPS):**
-   - Pattern: `eval time =.*?tokens \(\s*.*?\s*ms per token,\s*(.*?)\s*tokens per second\)`
-3. **Prompt Processing Speed:**
-   - Pattern: `prompt eval time =.*?tokens \(\s*.*?\s*ms per token,\s*(.*?)\s*tokens per second\)`
-
-### Phase C: Data Persistence (`~/.lms-stats/stats.db`)
-Create a SQLite table to store every completed generation event. All application data MUST be stored in the `~/.lms-stats` directory.
-1. **Directory Setup:** On startup, the tool must ensure `~/.lms-stats` exists using `fs.mkdirSync(path, { recursive: true })`.
-2. **Database Path:** The SQLite database should be initialized at `path.join(os.homedir(), '.lms-stats', 'stats.db')`.
+### Phase B: Data Persistence (`~/.lllm-stats/stats.db`)
+Create a SQLite table to store every completed generation event.
+1. **Directory Setup:** Ensure `~/.lllm-stats` exists.
+2. **Intelligent Backfill:** Use a `processed_logs` table to track offsets and avoid double-parsing.
 
 ```sql
 CREATE TABLE IF NOT EXISTS model_stats (
@@ -57,8 +48,8 @@ CREATE TABLE IF NOT EXISTS model_stats (
 - **Tip:** Only process lines containing `eval time` to keep it efficient.
 
 ### Step 3: Database Helper (`src/db.js`)
-- Ensure the `~/.lms-stats` directory exists.
-- Initialize the SQLite connection at `~/.lms-stats/stats.db`.
+- Ensure the `~/.lllm-stats` directory exists.
+- Initialize the SQLite connection at `~/.lllm-stats/stats.db`.
 - Export `saveStat(data)` to insert new rows.
 - Export `getAggregates()` to run queries for:
     - **Daily Max/Avg TPS**
@@ -82,4 +73,4 @@ Use `blessed-contrib` to create a grid layout:
 
 ## 5. Security & Safety
 - **Read Only:** Ensure the tool never writes to LM Studio's log files.
-- **Home Paths:** Use `os.homedir()` to resolve paths reliably for both `~/.lmstudio` (logs) and `~/.lms-stats` (data).
+- **Home Paths:** Use `os.homedir()` to resolve paths reliably for both `~/.lmstudio` (logs) and `~/.lllm-stats` (data).
