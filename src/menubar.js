@@ -14,21 +14,33 @@ function render(provider) {
     }
 
     const tps = live && live.status === 'GENERATING' ? (last ? last.generation_tps.toFixed(1) : '...') : (last ? last.generation_tps.toFixed(1) : '0.0');
+    const trs = last && last.prompt_tps ? last.prompt_tps.toFixed(1) : '0.0';
     const model = live ? live.identifier : (last ? last.model_id : 'Unknown');
+    
+    // Get VRAM usage
+    let vram = null;
+    try {
+        const gpuStats = provider.getGpuStats();
+        if (gpuStats && gpuStats.gpuMemoryInUse) {
+            vram = `${gpuStats.gpuMemoryInUse} GB`;
+        }
+    } catch (e) {}
     const timestamp = last ? dayjs(last.timestamp) : dayjs();
     const isRecent = last ? dayjs().diff(timestamp, 'minute') < 5 : false;
     
     // Main display
     const color = '#F5F5F5'; // User-specified high-contrast color
     const icon = (live && live.status === 'GENERATING') ? '🚀 ' : '💤 ';
-    console.log(`${icon}${tps} TPS | color=${color} size=14 font=Arial-Bold`);
+    console.log(`${icon}${tps} TPS | ${trs} TRS | color=${color} size=14 font=Arial-Bold`);
     
     // Dropdown items
     console.log('---');
     console.log(`Model: ${model}`);
     if (live) {
         console.log(`Status: ${live.status}`);
-        console.log(`Size: ${live.size}`);
+    }
+    if (vram) {
+        console.log(`VRAM: ${vram}`);
     }
     if (last) {
         console.log(`Last Update: ${timestamp.format('HH:mm:ss')}${isRecent ? '' : ' (stale)'}`);

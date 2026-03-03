@@ -97,10 +97,18 @@ if (isSummary) {
 const ui = new UI(provider);
 const watcher = new LogWatcher(provider);
 
+let currentTrs = 0;
+
 // Handle Log Events
 watcher.on('stats', (data) => {
     db.saveStat(data);
-    ui.updateTPS(data.generation_tps);
+    ui.updateTPS(data.generation_tps, currentTrs);
+});
+
+watcher.on('promptStats', (data) => {
+    if (data.prompt_tps) {
+        currentTrs = data.prompt_tps;
+    }
 });
 
 watcher.on('modelChange', (modelId) => {

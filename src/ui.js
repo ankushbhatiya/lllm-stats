@@ -84,9 +84,9 @@ class UI {
         this.refreshStats();
     }
 
-    updateTPS(tps) {
+    updateTPS(tps, trs = 0) {
         this.tpsGauge.setPercent(Math.min(Math.round(tps * 2), 100)); 
-        this.tpsGauge.setLabel(` >> LIVE: ${tps.toFixed(2)} TPS `);
+        this.tpsGauge.setLabel(` >> LIVE: ${tps.toFixed(2)} TPS | ${trs.toFixed(1)} TRS `);
         this.updateChart();
         this.refreshStats();
     }
@@ -140,8 +140,7 @@ class UI {
         
         if (this.liveInfo) {
             const statusColor = this.liveInfo.status === 'GENERATING' ? 'yellow-fg' : 'green-fg';
-            infoStr += `{bold}Status:{/bold} {${statusColor}}${this.liveInfo.status}{/${statusColor}}\n`;
-            infoStr += `{bold}Size:{/bold}   {white-fg}${this.liveInfo.size}{/white-fg}\n\n`;
+            infoStr += `{bold}Status:{/bold} {${statusColor}}${this.liveInfo.status}{/${statusColor}}\n\n`;
         }
         
         if (this.systemStats) {
