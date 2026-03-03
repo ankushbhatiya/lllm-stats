@@ -29,6 +29,7 @@ function backfill(provider) {
             
             let currentModel = 'Unknown';
             let currentTimestamp = new Date();
+            let lastPromptTps = 0;
 
             for (const line of lines) {
                 const parsed = provider.parseLine(line);
@@ -41,10 +42,15 @@ function backfill(provider) {
                     currentModel = parsed.modelId;
                 }
 
+                if (parsed.promptStats) {
+                    lastPromptTps = parsed.promptStats.prompt_tps || 0;
+                }
+
                 if (parsed.stats) {
                     db.saveStat({
                         model_id: currentModel,
                         generation_tps: parsed.stats.generation_tps,
+                        prompt_tps: lastPromptTps,
                         total_tokens: parsed.stats.total_tokens,
                         timestamp: currentTimestamp
                     });

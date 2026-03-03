@@ -58,6 +58,9 @@ if (isSummary) {
     const gpu = provider.getGpuStats();
     const serverStatus = provider.getServerStatus();
 
+    const model = live ? live.identifier : (last ? last.model_id : 'Unknown');
+    const isMLX = provider.isMLXBackend ? provider.isMLXBackend(model) : model.toLowerCase().includes('mlx');
+
     console.log(`\n📊 --- LLLM-Stats Summary (${provider.name}) ---`);
     console.log(`Server Status:       ${serverStatus.serverOn ? 'ONLINE' : 'OFFLINE'}`);
     
@@ -68,12 +71,19 @@ if (isSummary) {
         console.log(`Last Model Seen:     ${last.model_id}`);
     }
 
+    if (isMLX) {
+        console.log('Backend:             MLX (TPS not available)');
+    }
+
     if (gpu) {
         console.log(`GPU Utilization:     ${gpu.utilization}%`);
         console.log(`VRAM In-Use:         ${gpu.gpuMemoryInUse} GB`);
     }
 
-    if (last) {
+    if (isMLX) {
+        console.log('\n⚠️  MLX backend does not log TPS metrics.');
+        console.log('TPS data is only available for llama.cpp backend.');
+    } else if (last) {
         console.log(`Last Generation TPS: ${last.generation_tps.toFixed(2)}`);
     } else {
         console.log('No recent stats found.');
@@ -97,18 +107,10 @@ if (isSummary) {
 const ui = new UI(provider);
 const watcher = new LogWatcher(provider);
 
-let currentTrs = 0;
-
 // Handle Log Events
 watcher.on('stats', (data) => {
     db.saveStat(data);
-    ui.updateTPS(data.generation_tps, currentTrs);
-});
-
-watcher.on('promptStats', (data) => {
-    if (data.prompt_tps) {
-        currentTrs = data.prompt_tps;
-    }
+    ui.updateTPS(data.generation_tps, data.prompt_tps || 0);
 });
 
 watcher.on('modelChange', (modelId) => {

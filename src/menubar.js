@@ -13,9 +13,17 @@ function render(provider) {
         return;
     }
 
-    const tps = live && live.status === 'GENERATING' ? (last ? last.generation_tps.toFixed(1) : '...') : (last ? last.generation_tps.toFixed(1) : '0.0');
-    const trs = last && last.prompt_tps ? last.prompt_tps.toFixed(1) : '0.0';
     const model = live ? live.identifier : (last ? last.model_id : 'Unknown');
+    const isMLX = provider.isMLXBackend ? provider.isMLXBackend(model) : model.toLowerCase().includes('mlx');
+    
+    let tps, trs;
+    if (isMLX) {
+        tps = 'N/A';
+        trs = 'N/A';
+    } else {
+        tps = live && live.status === 'GENERATING' ? (last ? last.generation_tps.toFixed(1) : '...') : (last ? last.generation_tps.toFixed(1) : '0.0');
+        trs = last && last.prompt_tps ? last.prompt_tps.toFixed(1) : '0.0';
+    }
     
     // Get VRAM usage
     let vram = null;
@@ -36,6 +44,9 @@ function render(provider) {
     // Dropdown items
     console.log('---');
     console.log(`Model: ${model}`);
+    if (isMLX) {
+        console.log('Backend: MLX (TPS not available)');
+    }
     if (live) {
         console.log(`Status: ${live.status}`);
     }
@@ -46,8 +57,12 @@ function render(provider) {
         console.log(`Last Update: ${timestamp.format('HH:mm:ss')}${isRecent ? '' : ' (stale)'}`);
     }
     console.log('---');
-    console.log(`Today's Avg: ${daily.avg_tps ? daily.avg_tps.toFixed(2) : '0.00'} TPS`);
-    console.log(`Today's Peak: ${daily.max_tps ? daily.max_tps.toFixed(2) : '0.00'} TPS`);
+    if (isMLX) {
+        console.log('Note: MLX backend does not log TPS');
+    } else {
+        console.log(`Today's Avg: ${daily.avg_tps ? daily.avg_tps.toFixed(2) : '0.00'} TPS`);
+        console.log(`Today's Peak: ${daily.max_tps ? daily.max_tps.toFixed(2) : '0.00'} TPS`);
+    }
     console.log(`Today's Tokens: ${daily.total_tokens || 0}`);
     console.log('---');
     console.log('Open Dashboard | bash="lllm-stats" terminal=true');

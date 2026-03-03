@@ -46,7 +46,7 @@ class LMStudioProvider extends BaseProvider {
             result.modelId = modelLoadMatch[1].trim();
         }
 
-        // Generation TPS
+        // Generation TPS (llama.cpp backend)
         const genMatch = line.match(/eval time =.*?(\d+) tokens \(\s*.*?\s*ms per token,\s*(.*?)\s*tokens per second\)/);
         if (genMatch && !line.includes('prompt eval time')) {
             result.stats = {
@@ -55,11 +55,27 @@ class LMStudioProvider extends BaseProvider {
             };
         }
 
-        // Prompt TPS
+        // Prompt TPS (llama.cpp backend)
         const promptMatch = line.match(/prompt eval time =.*?tokens \(\s*.*?\s*ms per token,\s*(.*?)\s*tokens per second\)/);
         if (promptMatch) {
             result.promptStats = {
                 prompt_tps: parseFloat(promptMatch[1])
+            };
+        }
+
+        // MLX Backend: Detect activity but no TPS metrics available
+        // MLX logs "Streaming response" and "Finished streaming response" but no timing
+        const mlxPromptMatch = line.match(/Prompt processing progress:\s*(\d+\.?\d*)%/);
+        if (mlxPromptMatch) {
+            result.promptProgress = parseFloat(mlxPromptMatch[1]);
+        }
+
+        const mlxStreamStart = line.includes('Streaming response') && !line.includes('Finished');
+        const mlxStreamEnd = line.includes('Finished streaming response');
+        if (mlxStreamStart || mlxStreamEnd) {
+            result.mlxActivity = {
+                type: mlxStreamStart ? 'stream_start' : 'stream_end',
+                timestamp: result.timestamp
             };
         }
 
@@ -121,6 +137,24 @@ class LMStudioProvider extends BaseProvider {
         } catch (e) {
             return { serverOn: false };
         }
+    }
+
+    isMLXBackend(modelId) {
+        if (modelId && (modelId.toLowerCase().includes('mlx') || modelId.toLowerCase().includes('mlxamphibian'))) {
+            return true;
+        }
+        // Check log for MLX-specific patterns
+        try {
+            const latestLog = this.findLatestLog();
+            if (latestLog && fs.existsSync(latestLog)) {
+                const content = fs.readFileSync(latestLog, 'utf8');
+                // MLX backend logs these patterns
+                if (content.includes('Streaming response') || content.includes('MLXAmphibianEngine') || content.includes('TruncateMiddle policy')) {
+                    return true;
+                }
+            }
+        } catch (e) {}
+        return false;
     }
 }
 

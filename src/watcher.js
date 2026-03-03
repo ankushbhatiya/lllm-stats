@@ -14,6 +14,7 @@ class LogWatcher extends EventEmitter {
         this.currentModelId = 'Unknown';
         this.currentTimestamp = new Date();
         this.buffer = '';
+        this.lastPromptTps = 0;
     }
 
     start() {
@@ -77,12 +78,14 @@ class LogWatcher extends EventEmitter {
                 this.emit('stats', {
                     model_id: this.currentModelId,
                     generation_tps: parsed.stats.generation_tps,
+                    prompt_tps: this.lastPromptTps,
                     total_tokens: parsed.stats.total_tokens,
                     timestamp: this.currentTimestamp
                 });
             }
 
             if (parsed.promptStats) {
+                this.lastPromptTps = parsed.promptStats.prompt_tps || 0;
                 this.emit('promptStats', parsed.promptStats);
             }
         }
