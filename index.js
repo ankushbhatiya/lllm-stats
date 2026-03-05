@@ -94,7 +94,11 @@ if (isSummary) {
 
     if (gpu) {
         console.log(`GPU Utilization:     ${gpu.utilization}%`);
-        console.log(`VRAM In-Use:         ${gpu.gpuMemoryInUse} GB`);
+        if (gpu.gpuMemoryTotal) {
+            console.log(`VRAM In-Use:         ${gpu.gpuMemoryInUse} / ${gpu.gpuMemoryTotal} GB`);
+        } else {
+            console.log(`VRAM In-Use:         ${gpu.gpuMemoryInUse} GB`);
+        }
     }
 
     if (isMLX) {

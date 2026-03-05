@@ -152,7 +152,11 @@ class UI {
             const serverStatus = this.systemStats.serverOn ? '{green-fg}ONLINE{/green-fg}' : '{red-fg}OFFLINE{/red-fg}';
             infoStr += `{bold}Server:{/bold} ${serverStatus}\n`;
             infoStr += `{bold}GPU Use:{/bold} {cyan-fg}${this.systemStats.utilization}%{/cyan-fg}\n`;
-            infoStr += `{bold}VRAM:{/bold}    {cyan-fg}${this.systemStats.gpuMemoryInUse} GB{/cyan-fg}\n\n`;
+            if (this.systemStats.gpuMemoryTotal) {
+                infoStr += `{bold}VRAM:{/bold}    {cyan-fg}${this.systemStats.gpuMemoryInUse} / ${this.systemStats.gpuMemoryTotal} GB{/cyan-fg}\n\n`;
+            } else {
+                infoStr += `{bold}VRAM:{/bold}    {cyan-fg}${this.systemStats.gpuMemoryInUse} GB{/cyan-fg}\n\n`;
+            }
         }
 
         infoStr += `{bold}{yellow-fg}TODAY'S PEAK:{/yellow-fg}{/bold}\n`;

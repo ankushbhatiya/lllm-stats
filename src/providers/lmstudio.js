@@ -137,9 +137,11 @@ findLatestLog() {
             });
 
             const inUseGB = (stats["In use system memory"] / 1024 / 1024 / 1024).toFixed(2);
+            const totalAllocatedGB = (stats["Alloc system memory"] / 1024 / 1024 / 1024).toFixed(2);
             return {
                 utilization: stats["Device Utilization %"] || 0,
-                gpuMemoryInUse: inUseGB
+                gpuMemoryInUse: inUseGB,
+                gpuMemoryTotal: totalAllocatedGB
             };
         } catch (e) {
             return null;

@@ -32,7 +32,11 @@ function render(provider) {
     try {
         const gpuStats = provider.getGpuStats();
         if (gpuStats && gpuStats.gpuMemoryInUse) {
-            vram = `${gpuStats.gpuMemoryInUse} GB`;
+            if (gpuStats.gpuMemoryTotal) {
+                vram = `${gpuStats.gpuMemoryInUse} / ${gpuStats.gpuMemoryTotal} GB`;
+            } else {
+                vram = `${gpuStats.gpuMemoryInUse} GB`;
+            }
         }
     } catch (e) {}
     const timestamp = last ? dayjs(last.timestamp) : dayjs();
