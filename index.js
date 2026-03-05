@@ -1,4 +1,21 @@
 #!/usr/bin/env node
+// Suppress terminal capability warnings from blessed (harmless but noisy)
+const originalStderrWrite = process.stderr.write;
+process.stderr.write = function(chunk, encoding, cb) {
+    const str = chunk.toString();
+    if (!str.includes('Error on xterm-256color') && !str.includes('%p1%{')) {
+        return originalStderrWrite.call(this, chunk, encoding, cb);
+    }
+};
+
+const originalStdoutWrite = process.stdout.write;
+process.stdout.write = function(chunk, encoding, cb) {
+    const str = chunk.toString();
+    if (!str.includes('Error on xterm-256color') && !str.includes('%p1%{')) {
+        return originalStdoutWrite.call(this, chunk, encoding, cb);
+    }
+};
+
 const path = require('path');
 const os = require('os');
 const db = require('./src/db');

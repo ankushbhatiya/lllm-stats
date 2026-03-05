@@ -19,31 +19,33 @@ class LogWatcher extends EventEmitter {
 
     start() {
         const latest = this.provider.findLatestLog();
-        if (latest) {
+        if (latest && fs.existsSync(latest)) {
             this.watchFile(latest);
         }
 
         // Watch for new log files
         chokidar.watch(this.logDir, { ignoreInitial: true, depth: 2 }).on('add', (filePath) => {
-            if (filePath.endsWith('.log')) {
+            if (filePath.endsWith('.log') && fs.existsSync(filePath)) {
                 this.watchFile(filePath);
             }
         });
     }
 
     watchFile(filePath) {
+        if (!fs.existsSync(filePath)) return;
+
         if (this.currentFile) {
             fs.unwatchFile(this.currentFile);
         }
-        
+
         this.currentFile = filePath;
         let fileSize = fs.statSync(filePath).size;
 
         fs.watchFile(filePath, { interval: 1000 }, (curr) => {
             if (curr.size < fileSize) {
-                fileSize = 0; 
+                fileSize = 0;
             }
-            
+
             const stream = fs.createReadStream(filePath, {
                 start: fileSize,
                 end: curr.size
@@ -64,7 +66,7 @@ class LogWatcher extends EventEmitter {
 
         for (const line of lines) {
             const parsed = this.provider.parseLine(line);
-            
+
             if (parsed.timestamp) {
                 this.currentTimestamp = parsed.timestamp;
             }

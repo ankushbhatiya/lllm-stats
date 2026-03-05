@@ -5,15 +5,20 @@ const db = require('./db');
 class UI {
     constructor(provider) {
         this.provider = provider;
+        // Suppress terminal capability warnings
+        process.env.NCURSES_DEBUG = '1';
         this.screen = blessed.screen({
             smartCSR: true,
-            title: `LLLM-Stats - ${provider.name} Monitor`
+            title: `LLLM-Stats - ${provider.name} Monitor`,
+            fullUnicode: true,
+            debug: false,
+            autoPadding: true
         });
 
         this.grid = new contrib.grid({ rows: 12, cols: 12, screen: this.screen });
-        
+
         // --- UI Elements ---
-        
+
         // 1. Gauge: Current TPS (Top Left)
         this.tpsGauge = this.grid.set(0, 0, 3, 4, contrib.gauge, {
             label: ' >> LIVE THROUGHPUT ',
@@ -25,10 +30,10 @@ class UI {
         // 2. Line Chart: TPS History (Top Center/Right)
         this.tpsChart = this.grid.set(0, 4, 6, 8, contrib.line, {
             label: ' ~~ PERFORMANCE TRENDS ',
-            style: { 
-                line: "cyan", 
-                text: "white", 
-                baseline: "black" 
+            style: {
+                line: "cyan",
+                text: "white",
+                baseline: "black"
             },
             xLabelPadding: 3,
             xPadding: 10,
@@ -85,7 +90,7 @@ class UI {
     }
 
     updateTPS(tps, trs = 0) {
-        this.tpsGauge.setPercent(Math.min(Math.round(tps * 2), 100)); 
+        this.tpsGauge.setPercent(Math.min(Math.round(tps * 2), 100));
         this.tpsGauge.setLabel(` >> LIVE: ${tps.toFixed(2)} TPS | ${trs.toFixed(1)} TRS `);
         this.updateChart();
         this.refreshStats();
@@ -93,7 +98,7 @@ class UI {
 
     updateChart() {
         const history = db.getAggregatedStats(this.currentView);
-        
+
         const labels = history.map((entry, i) => {
             if (i % 4 === 0 || i === history.length - 1) {
                 const date = new Date(entry.bucket);
@@ -118,7 +123,7 @@ class UI {
     updateHelpBar() {
         const views = { today: 'DAILY (15m)', weekly: 'WEEKLY (1h)', monthly: 'MONTHLY (1d)' };
         let content = ' {bold}[Q]{/bold} Exit | {bold}[V]{/bold} Toggle View: ';
-        
+
         Object.keys(views).forEach(v => {
             if (v === this.currentView) {
                 content += `{white-bg}{black-fg} ${views[v]} {/black-fg}{/white-bg} `;
@@ -135,14 +140,14 @@ class UI {
         this.updateHelpBar();
         const daily = db.getDailyStats();
         const modelInfo = this.currentModel || 'Unknown';
-        
+
         let infoStr = `\n{bold}{cyan-fg}ACTIVE MODEL:{/cyan-fg}{/bold}\n${modelInfo}\n\n`;
-        
+
         if (this.liveInfo) {
             const statusColor = this.liveInfo.status === 'GENERATING' ? 'yellow-fg' : 'green-fg';
             infoStr += `{bold}Status:{/bold} {${statusColor}}${this.liveInfo.status}{/${statusColor}}\n\n`;
         }
-        
+
         if (this.systemStats) {
             const serverStatus = this.systemStats.serverOn ? '{green-fg}ONLINE{/green-fg}' : '{red-fg}OFFLINE{/red-fg}';
             infoStr += `{bold}Server:{/bold} ${serverStatus}\n`;
@@ -154,7 +159,7 @@ class UI {
         infoStr += `{bold}Avg TPS:{/bold} {white-fg}${daily.avg_tps ? daily.avg_tps.toFixed(2) : '0.00'}{/white-fg}\n`;
         infoStr += `{bold}Max TPS:{/bold} {green-fg}${daily.max_tps ? daily.max_tps.toFixed(2) : '0.00'}{/green-fg}\n`;
         infoStr += `{bold}Tokens:{/bold}  {yellow-fg}${daily.total_tokens || 0}{/yellow-fg}\n`;
-        
+
         this.infoBox.setContent(infoStr);
 
         const viewLabels = { today: 'Daily (15m)', weekly: 'Weekly (1h)', monthly: 'Monthly (1d)' };

@@ -11,21 +11,38 @@ class LMStudioProvider extends BaseProvider {
         this.logDir = path.join(os.homedir(), '.lmstudio/server-logs');
     }
 
-    findLatestLog() {
+findLatestLog() {
         if (!fs.existsSync(this.logDir)) return null;
         const months = fs.readdirSync(this.logDir).sort().reverse();
         if (months.length === 0) return null;
-        
-        const monthDir = path.join(this.logDir, months[0]);
-        const files = fs.readdirSync(monthDir)
-            .filter(f => f.endsWith('.log'))
-            .sort((a, b) => {
-                const statA = fs.statSync(path.join(monthDir, a));
-                const statB = fs.statSync(path.join(monthDir, b));
-                return statB.mtimeMs - statA.mtimeMs;
-            });
 
-        return files.length > 0 ? path.join(monthDir, files[0]) : null;
+        let latestFile = null;
+        let latestTime = 0;
+
+        for (const month of months) {
+            const monthDir = path.join(this.logDir, month);
+            if (!fs.statSync(monthDir).isDirectory()) continue;
+
+            const files = fs.readdirSync(monthDir)
+                .filter(f => f.endsWith('.log'))
+                .map(f => ({ name: f, fullPath: path.join(monthDir, f) }));
+
+            for (const file of files) {
+                try {
+                    const stat = fs.statSync(file.fullPath);
+                    // Sort by mtime first, then by filename as tiebreaker
+                    if (stat.mtimeMs > latestTime || 
+                        (stat.mtimeMs === latestTime && file.name > latestFile.name)) {
+                        latestTime = stat.mtimeMs;
+                        latestFile = file;
+                    }
+                } catch (e) {
+                    // Skip files that become unavailable
+                }
+            }
+        }
+
+        return latestFile ? latestFile.fullPath : null;
     }
 
     parseLine(line) {
@@ -140,16 +157,18 @@ class LMStudioProvider extends BaseProvider {
     }
 
     isMLXBackend(modelId) {
-        if (modelId && (modelId.toLowerCase().includes('mlx') || modelId.toLowerCase().includes('mlxamphibian'))) {
+        // Check for MLX-specific patterns in model ID (case-sensitive check)
+        if (modelId && (modelId.includes('MLX') || modelId.includes('mlxamphibian'))) {
             return true;
         }
-        // Check log for MLX-specific patterns
+        // Check log for MLX-specific patterns - look for actual MLX logs
         try {
             const latestLog = this.findLatestLog();
             if (latestLog && fs.existsSync(latestLog)) {
                 const content = fs.readFileSync(latestLog, 'utf8');
-                // MLX backend logs these patterns
-                if (content.includes('Streaming response') || content.includes('MLXAmphibianEngine') || content.includes('TruncateMiddle policy')) {
+                // MLX backend has distinct patterns - check for actual MLX-related content
+                // Not just "Streaming response" which is generic
+                if (content.includes('MLXAmphibianEngine') || content.includes('TruncateMiddle policy')) {
                     return true;
                 }
             }

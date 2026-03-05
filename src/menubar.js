@@ -5,7 +5,7 @@ function render(provider) {
     const last = db.getLastStat();
     const daily = db.getDailyStats();
     const live = provider.getLiveModelInfo();
-    
+
     if (!last && !live) {
         console.log('--- TPS | color=gray');
         console.log('---');
@@ -15,16 +15,18 @@ function render(provider) {
 
     const model = live ? live.identifier : (last ? last.model_id : 'Unknown');
     const isMLX = provider.isMLXBackend ? provider.isMLXBackend(model) : model.toLowerCase().includes('mlx');
-    
+
     let tps, trs;
     if (isMLX) {
+        // MLX backend doesn't log TPS metrics
         tps = 'N/A';
         trs = 'N/A';
     } else {
-        tps = live && live.status === 'GENERATING' ? (last ? last.generation_tps.toFixed(1) : '...') : (last ? last.generation_tps.toFixed(1) : '0.0');
+        // Show last recorded TPS regardless of status (IDLE or GENERATING)
+        tps = last ? last.generation_tps.toFixed(1) : '0.0';
         trs = last && last.prompt_tps ? last.prompt_tps.toFixed(1) : '0.0';
     }
-    
+
     // Get VRAM usage
     let vram = null;
     try {
@@ -35,12 +37,12 @@ function render(provider) {
     } catch (e) {}
     const timestamp = last ? dayjs(last.timestamp) : dayjs();
     const isRecent = last ? dayjs().diff(timestamp, 'minute') < 5 : false;
-    
+
     // Main display
     const color = '#F5F5F5'; // User-specified high-contrast color
     const icon = (live && live.status === 'GENERATING') ? '🚀 ' : '💤 ';
-    console.log(`${icon}${tps} TPS | ${trs} TRS | color=${color} size=14 font=Arial-Bold`);
-    
+    console.log(`${icon}${tps} TPS • ${trs} TRS | color=${color} size=14 font=Arial-Bold`);
+
     // Dropdown items
     console.log('---');
     console.log(`Model: ${model}`);
