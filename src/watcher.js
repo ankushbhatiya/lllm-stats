@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const EventEmitter = require('events');
 const chokidar = require('chokidar');
 const db = require('./db');
+const LogParser = require('./parser');
+const CONFIG = require('./config');
 
 class LogWatcher extends EventEmitter {
     constructor(provider) {
@@ -11,10 +12,9 @@ class LogWatcher extends EventEmitter {
         this.provider = provider;
         this.logDir = provider.logDir;
         this.currentFile = null;
-        this.currentModelId = 'Unknown';
-        this.currentTimestamp = new Date();
-        this.buffer = '';
-        this.lastPromptTps = 0;
+        this.parser = new LogParser(provider);
+        this.watcher = null;
+        this.fileWatcher = null;
     }
 
     start() {
@@ -24,10 +24,20 @@ class LogWatcher extends EventEmitter {
         }
 
         // Watch for new log files
-        chokidar.watch(this.logDir, { ignoreInitial: true, depth: 2 }).on('add', (filePath) => {
+        this.watcher = chokidar.watch(this.logDir, { 
+            ignoreInitial: true, 
+            depth: CONFIG.WATCH_DEPTH 
+        });
+        
+        this.watcher.on('add', (filePath) => {
             if (filePath.endsWith('.log') && fs.existsSync(filePath)) {
                 this.watchFile(filePath);
             }
+        });
+
+        this.watcher.on('error', (err) => {
+            if (CONFIG.DEBUG) console.error('Chokidar error:', err);
+            this.emit('error', err);
         });
     }
 
@@ -41,8 +51,9 @@ class LogWatcher extends EventEmitter {
         this.currentFile = filePath;
         let fileSize = fs.statSync(filePath).size;
 
-        fs.watchFile(filePath, { interval: 1000 }, (curr) => {
+        this.fileWatcher = fs.watchFile(filePath, { interval: CONFIG.WATCH_INTERVAL_MS }, (curr) => {
             if (curr.size < fileSize) {
+                // File was truncated or rotated
                 fileSize = 0;
             }
 
@@ -55,43 +66,47 @@ class LogWatcher extends EventEmitter {
                 this.parseChunk(chunk.toString(), filePath, curr.size);
             });
 
+            stream.on('error', (err) => {
+                if (CONFIG.DEBUG) console.error('Stream error:', err);
+            });
+
             fileSize = curr.size;
         });
     }
 
     parseChunk(data, filePath, size) {
-        this.buffer += data;
-        const lines = this.buffer.split('\n');
-        this.buffer = lines.pop();
-
-        for (const line of lines) {
-            const parsed = this.provider.parseLine(line);
-
-            if (parsed.timestamp) {
-                this.currentTimestamp = parsed.timestamp;
+        const results = this.parser.parseChunk(data);
+        
+        for (const result of results) {
+            if (result.hasModelChange) {
+                this.emit('modelChange', result.model_id);
             }
-
-            if (parsed.modelId) {
-                this.currentModelId = parsed.modelId;
-                this.emit('modelChange', this.currentModelId);
-            }
-
-            if (parsed.stats) {
-                this.emit('stats', {
-                    model_id: this.currentModelId,
-                    generation_tps: parsed.stats.generation_tps,
-                    prompt_tps: this.lastPromptTps,
-                    total_tokens: parsed.stats.total_tokens,
-                    timestamp: this.currentTimestamp
-                });
-            }
-
-            if (parsed.promptStats) {
-                this.lastPromptTps = parsed.promptStats.prompt_tps || 0;
-                this.emit('promptStats', parsed.promptStats);
-            }
+            
+            this.emit('stats', {
+                model_id: result.model_id,
+                generation_tps: result.generation_tps,
+                prompt_tps: result.prompt_tps,
+                total_tokens: result.total_tokens,
+                timestamp: result.timestamp
+            });
         }
+        
         db.updateProcessedOffset(filePath, size);
+    }
+
+    /**
+     * Stop watching and cleanup resources
+     */
+    stop() {
+        if (this.currentFile) {
+            fs.unwatchFile(this.currentFile);
+            this.currentFile = null;
+        }
+        if (this.watcher) {
+            this.watcher.close();
+            this.watcher = null;
+        }
+        this.fileWatcher = null;
     }
 }
 

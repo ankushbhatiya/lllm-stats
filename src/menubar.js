@@ -1,5 +1,6 @@
 const db = require('./db');
 const dayjs = require('dayjs');
+const CONFIG = require('./config');
 
 function render(provider) {
     const last = db.getLastStat();
@@ -38,7 +39,10 @@ function render(provider) {
                 vram = `${gpuStats.gpuMemoryInUse} GB`;
             }
         }
-    } catch (e) {}
+    } catch (e) {
+        if (CONFIG.DEBUG) console.error('GPU stats error in menubar:', e.message);
+    }
+    
     const timestamp = last ? dayjs(last.timestamp) : dayjs();
     const isRecent = last ? dayjs().diff(timestamp, 'minute') < 5 : false;
 

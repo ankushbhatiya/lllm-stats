@@ -1,17 +1,16 @@
 const Database = require('better-sqlite3');
-const path = require('path');
-const os = require('os');
 const fs = require('fs');
-
-const DATA_DIR = path.join(os.homedir(), '.lllm-stats');
-const DB_PATH = path.join(DATA_DIR, 'stats.db');
+const CONFIG = require('./config');
 
 // Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(CONFIG.DATA_DIR)) {
+    fs.mkdirSync(CONFIG.DATA_DIR, { recursive: true });
 }
 
-const db = new Database(DB_PATH);
+const db = new Database(CONFIG.DB_PATH);
+
+// Enable WAL mode for better concurrency
+db.pragma('journal_mode = WAL');
 
 // Initialize schema
 db.exec(`
@@ -28,7 +27,40 @@ db.exec(`
         file_path TEXT PRIMARY KEY,
         last_offset INTEGER
     );
+
+    CREATE INDEX IF NOT EXISTS idx_timestamp ON model_stats(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_model_id ON model_stats(model_id);
 `);
+
+/**
+ * Prune old data based on retention policy
+ * @returns {number} Number of rows deleted
+ */
+function pruneOldData() {
+    const stmt = db.prepare(`
+        DELETE FROM model_stats 
+        WHERE timestamp < datetime('now', '-${CONFIG.MAX_DB_AGE_DAYS} days')
+    `);
+    const result = stmt.run();
+    
+    // Vacuum to reclaim space (run occasionally, not on every prune)
+    if (result.changes > 1000) {
+        db.exec('VACUUM');
+    }
+    
+    return result.changes;
+}
+
+/**
+ * Close database connection gracefully
+ */
+function close() {
+    try {
+        db.close();
+    } catch (e) {
+        if (CONFIG.DEBUG) console.error('Error closing database:', e);
+    }
+}
 
 function saveStat(data) {
     const stmt = db.prepare(`
@@ -62,7 +94,7 @@ function getWeeklyStats() {
     `).all();
 }
 
-function getRecentTPS(limit = 20) {
+function getRecentTPS(limit = CONFIG.RECENT_TPS_LIMIT) {
     return db.prepare(`
         SELECT generation_tps, timestamp 
         FROM model_stats 
@@ -125,5 +157,7 @@ module.exports = {
     getLastStat,
     getProcessedOffset,
     updateProcessedOffset,
-    getAggregatedStats
+    getAggregatedStats,
+    pruneOldData,
+    close
 };

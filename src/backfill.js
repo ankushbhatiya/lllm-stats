@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('./db');
+const LogParser = require('./parser');
+const CONFIG = require('./config');
 
 function backfill(provider) {
     const logDir = provider.logDir;
@@ -25,42 +27,32 @@ function backfill(provider) {
             if (currentSize <= lastOffset) continue;
 
             const content = fs.readFileSync(filePath, 'utf8').slice(lastOffset);
-            const lines = content.split('\n');
             
-            let currentModel = 'Unknown';
-            let currentTimestamp = new Date();
-            let lastPromptTps = 0;
-
-            for (const line of lines) {
-                const parsed = provider.parseLine(line);
-                
-                if (parsed.timestamp) {
-                    currentTimestamp = parsed.timestamp;
-                }
-
-                if (parsed.modelId) {
-                    currentModel = parsed.modelId;
-                }
-
-                if (parsed.promptStats) {
-                    lastPromptTps = parsed.promptStats.prompt_tps || 0;
-                }
-
-                if (parsed.stats) {
-                    db.saveStat({
-                        model_id: currentModel,
-                        generation_tps: parsed.stats.generation_tps,
-                        prompt_tps: lastPromptTps,
-                        total_tokens: parsed.stats.total_tokens,
-                        timestamp: currentTimestamp
-                    });
-                    statsFound++;
-                }
+            // Create parser for this file
+            const parser = new LogParser(provider);
+            const results = parser.parseChunk(content);
+            
+            for (const result of results) {
+                db.saveStat({
+                    model_id: result.model_id,
+                    generation_tps: result.generation_tps,
+                    prompt_tps: result.prompt_tps,
+                    total_tokens: result.total_tokens,
+                    timestamp: result.timestamp
+                });
+                statsFound++;
             }
 
             db.updateProcessedOffset(filePath, currentSize);
         }
     }
+    
+    // Prune old data after backfill
+    const pruned = db.pruneOldData();
+    if (CONFIG.DEBUG && pruned > 0) {
+        console.log(`Pruned ${pruned} old records`);
+    }
+    
     return statsFound;
 }
 

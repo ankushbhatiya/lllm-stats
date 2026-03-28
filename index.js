@@ -22,32 +22,94 @@ const db = require('./src/db');
 const LogWatcher = require('./src/watcher');
 const UI = require('./src/ui');
 const backfill = require('./src/backfill');
-const LMStudioProvider = require('./src/providers/lmstudio');
+const { createProvider } = require('./src/providers/factory');
+const CONFIG = require('./src/config');
 
-// TODO: In future, add detection logic for Ollama, etc.
-const provider = new LMStudioProvider();
+// Parse CLI arguments
+function parseArgs() {
+    const args = process.argv.slice(2);
+    return {
+        summary: args.includes('--summary') || args.includes('-s'),
+        menubar: args.includes('--menubar'),
+        installMenubar: args.includes('--install-menubar'),
+        provider: extractArgValue(args, '--provider') || extractArgValue(args, '-p') || CONFIG.DEFAULT_PROVIDER,
+        cleanup: args.includes('--cleanup'),
+        help: args.includes('--help') || args.includes('-h'),
+        version: args.includes('--version') || args.includes('-v')
+    };
+}
+
+function extractArgValue(args, flag) {
+    const index = args.indexOf(flag);
+    return (index !== -1 && index + 1 < args.length) ? args[index + 1] : null;
+}
+
+const opts = parseArgs();
+
+// Handle help
+if (opts.help) {
+    console.log(`
+LLLM-Stats - Local LLM Performance Monitor
+
+Usage: lllm-stats [options]
+
+Options:
+  -s, --summary          Show summary and exit
+  --menubar              Output for macOS menu bar (SwiftBar/xbar)
+  --install-menubar      Show menubar installation instructions
+  -p, --provider <name>  Select provider: ${CONFIG.AVAILABLE_PROVIDERS.join(', ')} (default: ${CONFIG.DEFAULT_PROVIDER})
+  --cleanup              Prune old data and exit
+  -h, --help             Show this help
+  -v, --version          Show version
+
+Environment Variables:
+  DEBUG=1                Enable debug logging
+
+Examples:
+  lllm-stats                          Start TUI with default provider
+  lllm-stats -s                       Show quick summary
+  lllm-stats -p lmstudio              Use LM Studio provider
+  lllm-stats --cleanup                Prune data older than ${CONFIG.MAX_DB_AGE_DAYS} days
+`);
+    process.exit(0);
+}
+
+// Handle version
+if (opts.version) {
+    const pkg = require('./package.json');
+    console.log(pkg.version);
+    process.exit(0);
+}
+
+// Create provider
+let provider;
+try {
+    provider = createProvider(opts.provider);
+} catch (e) {
+    console.error(`Error: ${e.message}`);
+    process.exit(1);
+}
+
+// Handle cleanup mode
+if (opts.cleanup) {
+    const pruned = db.pruneOldData();
+    console.log(`Pruned ${pruned} old records (older than ${CONFIG.MAX_DB_AGE_DAYS} days)`);
+    db.close();
+    process.exit(0);
+}
 
 // Run backfill on startup
 try {
     const backfilledCount = backfill(provider);
-    if (backfilledCount > 0) {
-        // Only log in summary mode or to a file if needed
+    if (backfilledCount > 0 && CONFIG.DEBUG) {
+        console.log(`Backfilled ${backfilledCount} stats`);
     }
 } catch (e) {
     console.error('Backfill failed:', e.message);
 }
 
-const isSummary = process.argv.includes('--summary') || process.argv.includes('-s');
-const isMenubar = process.argv.includes('--menubar');
-const installMenubar = process.argv.includes('--install-menubar');
-
-if (isMenubar) {
-    const menubar = require('./src/menubar');
-    menubar.render(provider);
-    process.exit(0);
-}
-
-if (installMenubar) {
+// Handle menubar installation
+if (opts.installMenubar) {
     const scriptPath = path.resolve(__filename);
     const pluginName = 'lllm-stats.10s.sh'; // 10s refresh
     const swiftBarPath = path.join(os.homedir(), 'Library/Application Support/SwiftBar/plugins', pluginName);
@@ -57,17 +119,27 @@ if (installMenubar) {
     console.log('To see live TPS in your menu bar, you can use SwiftBar or xbar.\n');
     console.log('Option 1: SwiftBar (Recommended)');
     console.log(`  mkdir -p "$(dirname "${swiftBarPath}")"`);
-    console.log(`  echo '#!/bin/bash\n${scriptPath} --menubar' > "${swiftBarPath}"`);
+    console.log(`  echo '#!/bin/bash\\n${scriptPath} --menubar' > "${swiftBarPath}"`);
     console.log(`  chmod +x "${swiftBarPath}"`);
     console.log('\nOption 2: xbar');
     console.log(`  mkdir -p "$(dirname "${xbarPath}")"`);
-    console.log(`  echo '#!/bin/bash\n${scriptPath} --menubar' > "${xbarPath}"`);
+    console.log(`  echo '#!/bin/bash\\n${scriptPath} --menubar' > "${xbarPath}"`);
     console.log(`  chmod +x "${xbarPath}"`);
     console.log('\nRefresh your menu bar app after running these commands!');
+    db.close();
     process.exit(0);
 }
 
-if (isSummary) {
+// Handle menubar mode
+if (opts.menubar) {
+    const menubar = require('./src/menubar');
+    menubar.render(provider);
+    db.close();
+    process.exit(0);
+}
+
+// Handle summary mode
+if (opts.summary) {
     const daily = db.getDailyStats();
     const weekly = db.getWeeklyStats();
     const last = db.getLastStat();
@@ -121,12 +193,49 @@ if (isSummary) {
         });
     }
     console.log('---------------------------\n');
+    db.close();
     process.exit(0);
 }
 
 // Default: Start TUI
 const ui = new UI(provider);
 const watcher = new LogWatcher(provider);
+
+let isShuttingDown = false;
+
+function shutdown(signal) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    
+    if (CONFIG.DEBUG) console.log(`\nReceived ${signal}, shutting down gracefully...`);
+    
+    try {
+        watcher.stop();
+        db.close();
+    } catch (e) {
+        if (CONFIG.DEBUG) console.error('Error during shutdown:', e);
+    }
+    
+    process.exit(0);
+}
+
+// Handle graceful shutdown
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('exit', () => {
+    if (!isShuttingDown) shutdown('exit');
+});
+
+// Handle uncaught errors
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught exception:', err);
+    shutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled rejection at:', promise, 'reason:', reason);
+    shutdown('unhandledRejection');
+});
 
 // Handle Log Events
 watcher.on('stats', (data) => {
@@ -139,7 +248,7 @@ watcher.on('modelChange', (modelId) => {
 });
 
 watcher.on('error', (err) => {
-    console.error('Watcher Error:', err);
+    if (CONFIG.DEBUG) console.error('Watcher Error:', err);
 });
 
 // Start watching
@@ -147,6 +256,7 @@ try {
     watcher.start();
 } catch (err) {
     console.error(`Failed to start log watcher for ${provider.name}.`);
+    db.close();
     process.exit(1);
 }
 
@@ -154,7 +264,7 @@ try {
 ui.updateChart();
 ui.refreshStats();
 
-// Poll for live info every 10s in TUI mode
+// Poll for live info in TUI mode
 setInterval(() => {
     const live = provider.getLiveModelInfo();
     const gpu = provider.getGpuStats();
@@ -168,4 +278,4 @@ setInterval(() => {
         ...gpu,
         serverOn: serverStatus.serverOn
     });
-}, 10000);
+}, CONFIG.POLL_INTERVAL_MS);

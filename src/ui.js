@@ -1,6 +1,7 @@
 const blessed = require('blessed');
 const contrib = require('blessed-contrib');
 const db = require('./db');
+const CONFIG = require('./config');
 
 class UI {
     constructor(provider) {
@@ -85,12 +86,17 @@ class UI {
             this.refreshStats();
         });
 
-        this.screen.key(['escape', 'q', 'C-c'], () => process.exit(0));
+        this.screen.key(['escape', 'q', 'C-c'], () => {
+            process.emit('SIGINT');
+        });
+        
         this.refreshStats();
     }
 
     updateTPS(tps, trs = 0) {
-        this.tpsGauge.setPercent(Math.min(Math.round(tps * 2), 100));
+        // Scale TPS for gauge (assuming max 50 TPS = 100%)
+        const gaugePercent = Math.min(Math.round((tps / 50) * 100), 100);
+        this.tpsGauge.setPercent(gaugePercent);
         this.tpsGauge.setLabel(` >> LIVE: ${tps.toFixed(2)} TPS | ${trs.toFixed(1)} TRS `);
         this.updateChart();
         this.refreshStats();
@@ -172,7 +178,7 @@ class UI {
         const history = db.getAggregatedStats(this.currentView);
         this.statsTable.setData({
             headers: ['Time/Date', 'Avg TPS', 'Requests'],
-            data: history.slice(-20).map(h => [h.bucket.split(' ').pop(), h.avg_tps.toFixed(2), h.count.toString()])
+            data: history.slice(-CONFIG.CHART_LIMIT).map(h => [h.bucket.split(' ').pop(), h.avg_tps.toFixed(2), h.count.toString()])
         });
 
         this.screen.render();

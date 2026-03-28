@@ -3,6 +3,8 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 const BaseProvider = require('./base');
+const { getGpuStats } = require('../platform');
+const CONFIG = require('../config');
 
 class LMStudioProvider extends BaseProvider {
     constructor() {
@@ -11,38 +13,44 @@ class LMStudioProvider extends BaseProvider {
         this.logDir = path.join(os.homedir(), '.lmstudio/server-logs');
     }
 
-findLatestLog() {
+    findLatestLog() {
         if (!fs.existsSync(this.logDir)) return null;
-        const months = fs.readdirSync(this.logDir).sort().reverse();
-        if (months.length === 0) return null;
+        
+        try {
+            const months = fs.readdirSync(this.logDir).sort().reverse();
+            if (months.length === 0) return null;
 
-        let latestFile = null;
-        let latestTime = 0;
+            let latestFile = null;
+            let latestTime = 0;
 
-        for (const month of months) {
-            const monthDir = path.join(this.logDir, month);
-            if (!fs.statSync(monthDir).isDirectory()) continue;
+            for (const month of months) {
+                const monthDir = path.join(this.logDir, month);
+                if (!fs.statSync(monthDir).isDirectory()) continue;
 
-            const files = fs.readdirSync(monthDir)
-                .filter(f => f.endsWith('.log'))
-                .map(f => ({ name: f, fullPath: path.join(monthDir, f) }));
+                const files = fs.readdirSync(monthDir)
+                    .filter(f => f.endsWith('.log'))
+                    .map(f => ({ name: f, fullPath: path.join(monthDir, f) }));
 
-            for (const file of files) {
-                try {
-                    const stat = fs.statSync(file.fullPath);
-                    // Sort by mtime first, then by filename as tiebreaker
-                    if (stat.mtimeMs > latestTime || 
-                        (stat.mtimeMs === latestTime && file.name > latestFile.name)) {
-                        latestTime = stat.mtimeMs;
-                        latestFile = file;
+                for (const file of files) {
+                    try {
+                        const stat = fs.statSync(file.fullPath);
+                        // Sort by mtime first, then by filename as tiebreaker
+                        if (stat.mtimeMs > latestTime || 
+                            (stat.mtimeMs === latestTime && file.name > (latestFile?.name || ''))) {
+                            latestTime = stat.mtimeMs;
+                            latestFile = file;
+                        }
+                    } catch (e) {
+                        if (CONFIG.DEBUG) console.error(`Error stating file ${file.fullPath}:`, e.message);
                     }
-                } catch (e) {
-                    // Skip files that become unavailable
                 }
             }
-        }
 
-        return latestFile ? latestFile.fullPath : null;
+            return latestFile ? latestFile.fullPath : null;
+        } catch (e) {
+            if (CONFIG.DEBUG) console.error('Error finding latest log:', e.message);
+            return null;
+        }
     }
 
     parseLine(line) {
@@ -81,7 +89,6 @@ findLatestLog() {
         }
 
         // MLX Backend: Detect activity but no TPS metrics available
-        // MLX logs "Streaming response" and "Finished streaming response" but no timing
         const mlxPromptMatch = line.match(/Prompt processing progress:\s*(\d+\.?\d*)%/);
         if (mlxPromptMatch) {
             result.promptProgress = parseFloat(mlxPromptMatch[1]);
@@ -102,6 +109,11 @@ findLatestLog() {
     getLiveModelInfo() {
         try {
             const lmsPath = path.join(os.homedir(), '.lmstudio/bin/lms');
+            if (!fs.existsSync(lmsPath)) {
+                if (CONFIG.DEBUG) console.log('LM Studio CLI not found at:', lmsPath);
+                return null;
+            }
+            
             const output = execSync(`"${lmsPath}" ps`).toString().split('\n');
             if (output.length > 2) {
                 const lines = output.filter(l => l.trim() !== '' && !l.includes('IDENTIFIER'));
@@ -115,45 +127,28 @@ findLatestLog() {
                     };
                 }
             }
-        } catch (e) {}
+        } catch (e) {
+            if (CONFIG.DEBUG) console.error('getLiveModelInfo error:', e.message);
+        }
         return null;
     }
 
     getGpuStats() {
-        try {
-            const output = execSync('ioreg -c AGXAccelerator -r -d 1').toString();
-            const statsMatch = output.match(/"PerformanceStatistics"\s*=\s*\{([^}]+)\}/);
-            if (!statsMatch) return null;
-
-            const statsString = statsMatch[1];
-            const stats = {};
-            statsString.split(',').forEach(line => {
-                const parts = line.split('=');
-                if (parts.length === 2) {
-                    const key = parts[0].trim().replace(/"/g, '');
-                    const value = parseInt(parts[1].trim());
-                    if (key && !isNaN(value)) stats[key] = value;
-                }
-            });
-
-            const inUseGB = (stats["In use system memory"] / 1024 / 1024 / 1024).toFixed(2);
-            const totalAllocatedGB = (stats["Alloc system memory"] / 1024 / 1024 / 1024).toFixed(2);
-            return {
-                utilization: stats["Device Utilization %"] || 0,
-                gpuMemoryInUse: inUseGB,
-                gpuMemoryTotal: totalAllocatedGB
-            };
-        } catch (e) {
-            return null;
-        }
+        // Use platform abstraction
+        return getGpuStats();
     }
 
     getServerStatus() {
         try {
             const lmsPath = path.join(os.homedir(), '.lmstudio/bin/lms');
+            if (!fs.existsSync(lmsPath)) {
+                return { serverOn: false };
+            }
+            
             const output = execSync(`"${lmsPath}" status`).toString();
             return { serverOn: output.includes('Server: ON') };
         } catch (e) {
+            if (CONFIG.DEBUG) console.error('getServerStatus error:', e.message);
             return { serverOn: false };
         }
     }
@@ -163,18 +158,28 @@ findLatestLog() {
         if (modelId && (modelId.includes('MLX') || modelId.includes('mlxamphibian'))) {
             return true;
         }
+        
         // Check log for MLX-specific patterns - look for actual MLX logs
         try {
             const latestLog = this.findLatestLog();
             if (latestLog && fs.existsSync(latestLog)) {
-                const content = fs.readFileSync(latestLog, 'utf8');
-                // MLX backend has distinct patterns - check for actual MLX-related content
-                // Not just "Streaming response" which is generic
+                // Read only first 100KB to avoid blocking on large files
+                const stats = fs.statSync(latestLog);
+                const sizeToRead = Math.min(stats.size, 100 * 1024);
+                const fd = fs.openSync(latestLog, 'r');
+                const buffer = Buffer.alloc(sizeToRead);
+                fs.readSync(fd, buffer, 0, sizeToRead, 0);
+                fs.closeSync(fd);
+                
+                const content = buffer.toString();
+                // MLX backend has distinct patterns
                 if (content.includes('MLXAmphibianEngine') || content.includes('TruncateMiddle policy')) {
                     return true;
                 }
             }
-        } catch (e) {}
+        } catch (e) {
+            if (CONFIG.DEBUG) console.error('isMLXBackend error:', e.message);
+        }
         return false;
     }
 }
